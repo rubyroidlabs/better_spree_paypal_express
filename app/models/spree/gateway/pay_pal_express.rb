@@ -1,4 +1,5 @@
 require 'paypal-sdk-merchant'
+
 module Spree
   class Gateway::PayPalExpress < Gateway
     preference :login, :string
@@ -34,20 +35,34 @@ module Spree
       'paypal'
     end
 
+    def paypal_logger
+      @paypal_logger ||= Logger.new(Rails.root.join('log', 'paypal-debug-logger.log'), 'w+')
+    end
+
     def purchase(amount, express_checkout, gateway_options={})
+      payment = Spree::Payment.find_by(source: express_checkout)
+      order = payment.order
+
       pp_details_request = provider.build_get_express_checkout_details({
         :Token => express_checkout.token
       })
       pp_details_response = provider.get_express_checkout_details(pp_details_request)
 
+      payment_details = pp_details_response.get_express_checkout_details_response_details.PaymentDetails
+
+      paypal_logger.fatal(payment_details.inspect)
+
+      payment_details[0].merge!(::Spree::Paypal::PaymentDetails.new(order).to_h)
       pp_request = provider.build_do_express_checkout_payment({
         :DoExpressCheckoutPaymentRequestDetails => {
           :PaymentAction => "Sale",
           :Token => express_checkout.token,
           :PayerID => express_checkout.payer_id,
-          :PaymentDetails => pp_details_response.get_express_checkout_details_response_details.PaymentDetails
+          :PaymentDetails => payment_details
         }
       })
+
+      paypal_logger.fatal(payment_details.inspect)
 
       pp_response = provider.do_express_checkout_payment(pp_request)
       if pp_response.success?
@@ -101,6 +116,3 @@ module Spree
     end
   end
 end
-
-#   payment.state = 'completed'
-#   current_order.state = 'complete'
